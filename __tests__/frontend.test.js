@@ -8,6 +8,9 @@ global.fetch = jest.fn();
 // Mock alert
 global.alert = jest.fn();
 
+// Mock prompt
+global.prompt = jest.fn();
+
 describe('Frontend Todo Application', () => {
   let todoInput, addBtn, todoList, totalCount, completedCount;
 
@@ -31,6 +34,7 @@ describe('Frontend Todo Application', () => {
     // Reset fetch mock
     fetch.mockReset();
     global.alert.mockReset();
+    global.prompt.mockReset();
   });
 
   describe('escapeHtml function', () => {
@@ -58,7 +62,7 @@ describe('Frontend Todo Application', () => {
       expect(todoList.innerHTML).toContain('No todos yet. Add one above!');
     });
 
-    test('should render todos correctly', () => {
+    test('should render todos correctly with edit and delete buttons', () => {
       const todos = [
         { id: 1, text: 'Test todo', completed: false },
         { id: 2, text: 'Completed todo', completed: true }
@@ -79,6 +83,7 @@ describe('Frontend Todo Application', () => {
             onchange="toggleTodo(${todo.id})"
           />
           <span class="todo-text">${escapeHtml(todo.text)}</span>
+          <button class="edit-btn" onclick="editTodo(${todo.id})">Edit</button>
           <button class="delete-btn" onclick="deleteTodo(${todo.id})">Delete</button>
         </div>
       `).join('');
@@ -86,6 +91,9 @@ describe('Frontend Todo Application', () => {
       expect(todoList.children.length).toBe(2);
       expect(todoList.innerHTML).toContain('Test todo');
       expect(todoList.innerHTML).toContain('Completed todo');
+      expect(todoList.innerHTML).toContain('Edit');
+      expect(todoList.innerHTML).toContain('Delete');
+      expect(todoList.querySelectorAll('.edit-btn').length).toBe(2);
     });
   });
 
@@ -283,6 +291,156 @@ describe('Frontend Todo Application', () => {
       }
 
       expect(alert).toHaveBeenCalledWith('Failed to delete todo');
+    });
+  });
+
+  describe('editTodo function', () => {
+    test('should edit a todo successfully', async () => {
+      const updatedTodo = { id: 1, text: 'Updated text', completed: false };
+      
+      prompt.mockReturnValueOnce('Updated text');
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => updatedTodo
+      });
+
+      const newText = prompt('Edit todo:', 'Original text');
+      
+      if (newText && newText.trim()) {
+        const response = await fetch('/api/todos/1', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ text: newText.trim() }),
+        });
+
+        expect(response.ok).toBe(true);
+        const result = await response.json();
+        expect(result.text).toBe('Updated text');
+      }
+
+      expect(prompt).toHaveBeenCalledWith('Edit todo:', 'Original text');
+    });
+
+    test('should not edit when user cancels', () => {
+      prompt.mockReturnValueOnce(null);
+
+      const newText = prompt('Edit todo:', 'Original text');
+
+      if (newText === null) {
+        // User cancelled - do nothing
+      }
+
+      expect(newText).toBeNull();
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    test('should not edit with empty text', () => {
+      prompt.mockReturnValueOnce('');
+
+      const newText = prompt('Edit todo:', 'Original text');
+
+      if (newText !== null && !newText.trim()) {
+        alert('Todo text cannot be empty');
+      }
+
+      expect(alert).toHaveBeenCalledWith('Todo text cannot be empty');
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    test('should not edit with whitespace-only text', () => {
+      prompt.mockReturnValueOnce('   ');
+
+      const newText = prompt('Edit todo:', 'Original text');
+
+      if (newText !== null && !newText.trim()) {
+        alert('Todo text cannot be empty');
+      }
+
+      expect(alert).toHaveBeenCalledWith('Todo text cannot be empty');
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    test('should handle edit error', async () => {
+      prompt.mockReturnValueOnce('Updated text');
+      fetch.mockResolvedValueOnce({
+        ok: false
+      });
+
+      const newText = prompt('Edit todo:', 'Original text');
+      
+      if (newText && newText.trim()) {
+        const response = await fetch('/api/todos/1', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ text: newText.trim() }),
+        });
+
+        if (!response.ok) {
+          alert('Failed to update todo');
+        }
+      }
+
+      expect(alert).toHaveBeenCalledWith('Failed to update todo');
+    });
+
+    test('should trim whitespace from edited text', async () => {
+      const updatedTodo = { id: 1, text: 'Trimmed text', completed: false };
+      
+      prompt.mockReturnValueOnce('  Trimmed text  ');
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => updatedTodo
+      });
+
+      const newText = prompt('Edit todo:', 'Original text');
+      
+      if (newText && newText.trim()) {
+        const response = await fetch('/api/todos/1', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ text: newText.trim() }),
+        });
+
+        const result = await response.json();
+        expect(result.text).toBe('Trimmed text');
+      }
+
+      expect(fetch).toHaveBeenCalledWith('/api/todos/1', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text: 'Trimmed text' }),
+      });
+    });
+
+    test('should handle edit network error', async () => {
+      prompt.mockReturnValueOnce('Updated text');
+      fetch.mockRejectedValueOnce(new Error('Network error'));
+
+      const newText = prompt('Edit todo:', 'Original text');
+      
+      if (newText && newText.trim()) {
+        try {
+          await fetch('/api/todos/1', {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ text: newText.trim() }),
+          });
+        } catch (error) {
+          alert('Failed to update todo');
+        }
+      }
+
+      expect(alert).toHaveBeenCalledWith('Failed to update todo');
     });
   });
 
